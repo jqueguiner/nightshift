@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, type FSWatcher, readFileSync, statSync, watch } from "node:fs";
 import { basename, join } from "node:path";
 import { normalizeDependsOn, releaseTarget } from "../shared/dependencies.ts";
+import { normalizeGithubImport } from "../shared/githubImport.ts";
 import { sanitizeModels } from "../shared/models.ts";
 import { needsRun } from "../shared/needs-run.ts";
 import { normalizeSkipColumnIds, resolveNextColumn } from "../shared/skip.ts";
@@ -128,7 +129,17 @@ const CARD_KEYS = [
   "timeBase",
   "models",
 ];
-const BOARD_KEYS = ["version", "name", "columns", "cards", "nextCardNumber", "maxParallel", "favoriteSkills", "worktreePolicy"];
+const BOARD_KEYS = [
+  "version",
+  "name",
+  "columns",
+  "cards",
+  "nextCardNumber",
+  "maxParallel",
+  "favoriteSkills",
+  "worktreePolicy",
+  "githubImport",
+];
 
 /**
  * Fields this version does not know, kept as they are. Several Nightshift versions write the same file
@@ -282,6 +293,7 @@ export function normalizeBoard(raw: unknown, fallbackName: string): Board {
   const favoriteSkills = normalizeFavoriteSkills(r.favoriteSkills);
   const maxParallel = normalizeProjectParallel(r.maxParallel);
   const worktreePolicy = normalizeWorktreePolicy(r.worktreePolicy);
+  const githubImport = normalizeGithubImport(r.githubImport);
   return {
     ...unknownFields(raw, BOARD_KEYS),
     version: 1,
@@ -292,6 +304,7 @@ export function normalizeBoard(raw: unknown, fallbackName: string): Board {
     ...(maxParallel !== undefined ? { maxParallel } : {}),
     ...(favoriteSkills ? { favoriteSkills } : {}),
     ...(worktreePolicy ? { worktreePolicy } : {}),
+    ...(githubImport ? { githubImport } : {}),
   };
 }
 

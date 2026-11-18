@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { Server, ServerWebSocket } from "bun";
 import { dependencyCycle, describeCycle, releaseReason, resolveDependencyRefs, unmetDependencies } from "../shared/dependencies.ts";
+import { normalizeGithubImport, parseGithubImport } from "../shared/githubImport.ts";
 import { describeModelChanges, diffModels, validateModelsStrict } from "../shared/models.ts";
 import { MAX_PENDING_IMAGES, pendingIds, resolvePending } from "../shared/pendingImages.ts";
 import { type CardImageStored, cardImageType } from "../shared/screenshots.ts";
@@ -26,6 +27,7 @@ import {
 } from "../shared/types.ts";
 import { safeHttpUrl } from "../shared/urls.ts";
 import index from "../web/index.html";
+import { GithubImportScheduler } from "./githubImport.ts";
 import { checkRequest, HttpError } from "./guard.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { removeScreenshots, resolveScreenshot, storeCardImage } from "./screenshots.ts";
@@ -223,6 +225,27 @@ export function startServer({ port, development, agents = true }: { port: number
       return card;
     });
   };
+
+  // Automatic GitHub issue import (src/server/githubImport.ts): one scheduler, kept with the shared state so
+  // `bun --hot` reuses it; it runs only in the instance that runs the agents.
+  const gi = globalThis as { __nightshiftImporter?: GithubImportScheduler };
+  const importer = (): GithubImportScheduler => {
+    if (!gi.__nightshiftImporter) {
+      gi.__nightshiftImporter = new GithubImportScheduler(
+        () => [...opened].map((path) => orch.get(path)),
+        (p, card) =>
+          createCard(p, {
+            title: card.title,
+            description: card.description,
+            columnId: BACKLOG_COLUMN_ID,
+            draft: card.draft,
+            historyText: `Imported in ${BACKLOG_COLUMN_NAME} from GitHub`,
+          }),
+      );
+    }
+    return gi.__nightshiftImporter;
+  };
+  if (agents) importer().start();
 
   const server: Server<undefined> = Bun.serve({
     port,
@@ -584,6 +607,29 @@ export function startServer({ port, development, agents = true }: { port: number
             else delete board.favoriteSkills;
           });
           return orch.snapshot(p);
+        }),
+      },
+      "/api/github-import": {
+        GET: h((_b, url) => {
+          const p = project({}, url);
+          return { config: normalizeGithubImport(p.board.githubImport) ?? null, lastRun: importer().lastRun(p) ?? null };
+        }),
+        PUT: h((b, url) => {
+          const p = project(b, url);
+          const kept = normalizeGithubImport(p.board.githubImport)?.imported ?? [];
+          const config = parseGithubImport(b.config, kept);
+          p.mutate((board) => {
+            board.githubImport = config;
+          });
+          return { config, lastRun: importer().lastRun(p) ?? null };
+        }),
+      },
+      "/api/github-import/run": {
+        POST: h(async (b, url) => {
+          const p = project(b, url);
+          if (!agents) throw new HttpError(409, "This instance runs no agents: the import runs in the main instance");
+          const run = await importer().runNow(p);
+          return { config: normalizeGithubImport(p.board.githubImport) ?? null, lastRun: run };
         }),
       },
       "/api/worktree-policy": {

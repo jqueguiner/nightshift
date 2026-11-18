@@ -1,6 +1,7 @@
 // Types shared by the server and the web client.
 
 import type { FlowState } from "./flow.ts";
+import type { GithubImportConfig } from "./githubImport.ts";
 import type { QuotaSnapshot } from "./usage.ts";
 
 export type ColumnType = "inert" | "skill";
@@ -136,6 +137,8 @@ export interface Board {
   favoriteSkills?: string[];
   /** Whether agents work in a git worktree. Absent = `DEFAULT_WORKTREE_POLICY`; never stored as the default. */
   worktreePolicy?: WorktreePolicy;
+  /** Automatic import of GitHub issues into the Backlog (src/shared/githubImport.ts). Absent until set. */
+  githubImport?: GithubImportConfig;
 }
 
 /** Agents must use a worktree per card, may choose, or must never create one. */

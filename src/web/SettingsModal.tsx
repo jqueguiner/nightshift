@@ -10,6 +10,7 @@ import { Input } from "./components/ui/input.tsx";
 import { Label } from "./components/ui/label.tsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select.tsx";
 import { Switch } from "./components/ui/switch.tsx";
+import { GithubImportSettings } from "./GithubImportSettings.tsx";
 import { type MessageKey, t, useT } from "./i18n/index.ts";
 import { notifyError } from "./notify.ts";
 
@@ -36,7 +37,7 @@ const WORKTREE_LABELS: Record<WorktreePolicy, MessageKey> = {
   forbidden: "settings.worktree.forbidden",
 };
 
-function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+export function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   return (
     <section className="settings-section flex flex-col gap-1">
       <h3 className="text-[15px] font-semibold">{title}</h3>
@@ -47,7 +48,7 @@ function Section({ title, description, children }: { title: string; description:
 }
 
 /** Form row: label and help on the left, control on the right. */
-function Row({ id, label, help, children }: { id?: string; label: string; help?: ReactNode; children: ReactNode }) {
+export function Row({ id, label, help, children }: { id?: string; label: string; help?: ReactNode; children: ReactNode }) {
   return (
     <div className="grid grid-cols-1 items-start gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:gap-6">
       <div className="flex min-w-0 flex-col gap-0.5">
@@ -139,6 +140,8 @@ export function SettingsContent({
           )}
         </Section>
       )}
+
+      {currentProject && <GithubImportSettings project={currentProject} />}
 
       <Section title={t("settings.claude.title")} description={t("settings.claude.description")}>
         <Row id="set-permission" label={t("settings.permission.label")} help={t("settings.permission.help")}>

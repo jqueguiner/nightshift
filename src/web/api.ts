@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FlowState } from "../shared/flow.ts";
+import type { GithubImportConfig, GithubImportRun } from "../shared/githubImport.ts";
 import type { CardImageStored, CardImageUpload } from "../shared/screenshots.ts";
 import type { LogLine, ProjectSnapshot, ServerEvent, Settings, SkillInfo, WorktreePolicy } from "../shared/types.ts";
 import type { QuotaSnapshot } from "../shared/usage.ts";
@@ -25,6 +26,12 @@ async function toBase64(blob: Blob): Promise<string> {
 }
 
 const q = (project: string) => `project=${encodeURIComponent(project)}`;
+
+/** A project's GitHub import settings and its last run (GET/PUT /api/github-import). */
+export interface GithubImportState {
+  config: GithubImportConfig | null;
+  lastRun: GithubImportRun | null;
+}
 
 export const api = {
   settings: () => call<Settings>("GET", "/api/settings"),
@@ -96,6 +103,10 @@ export const api = {
   saveSkill: (project: string, name: string, content: string) => call("PUT", "/api/skill", { project, name, content }),
   createSkill: (project: string, name: string, description: string, body: string) =>
     call<SkillInfo>("POST", "/api/skills", { project, name, description, body }),
+  githubImport: (project: string) => call<GithubImportState>("GET", `/api/github-import?${q(project)}`),
+  saveGithubImport: (project: string, config: Partial<GithubImportConfig>) =>
+    call<GithubImportState>("PUT", "/api/github-import", { project, config }),
+  runGithubImport: (project: string) => call<GithubImportState>("POST", "/api/github-import/run", { project }),
   setWorktreePolicy: (project: string, policy: WorktreePolicy) => call<ProjectSnapshot>("PUT", "/api/worktree-policy", { project, policy }),
   toggleFavoriteSkill: (project: string, name: string, favorite: boolean) =>
     call<ProjectSnapshot>("PUT", "/api/favorite-skills", { project, name, favorite }),
