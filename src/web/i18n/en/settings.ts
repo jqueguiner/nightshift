@@ -75,8 +75,12 @@ export const settings = {
   "settings.githubImport.maxPerRun.help": "At most {max}; the rest comes on the next runs, oldest issue first.",
   "settings.githubImport.asDraft.label": "Import as drafts",
   "settings.githubImport.asDraft.help": "Fast forward leaves drafts in Backlog until you take the draft off.",
+  "settings.githubImport.activePrHours.label": "Open PR active for (hours)",
+  "settings.githubImport.activePrHours.help":
+    "An issue whose open PR moved within this time is left out (someone works on it). Older, the PR counts as abandoned: the issue is imported and its card says to take the branch over. 0: never left out. At most {max}.",
   "settings.githubImport.save": "Save import",
   "settings.githubImport.runNow": "Save and import now",
-  "settings.githubImport.runDone": "Last import {at}: {created} created, {known} already on the board, {deferred} left for the next run.",
+  "settings.githubImport.runDone":
+    "Last import {at}: {created} created, {known} already on the board, {inProgress} with an active PR, {deferred} left for the next run.",
   "settings.githubImport.runError": "Last import {at} failed: {error}",
 } as const;

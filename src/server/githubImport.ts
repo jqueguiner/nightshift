@@ -18,6 +18,8 @@ import {
   ME,
   matchesFilters,
   normalizeGithubImport,
+  type OpenPullRequest,
+  prActivity,
   searchQuery,
 } from "../shared/githubImport.ts";
 import type { Card } from "../shared/types.ts";
@@ -32,6 +34,9 @@ const GH_TIMEOUT_MS = 60_000;
 /** How often the scheduler looks for a project whose import is due. */
 const TICK_MS = 30_000;
 const FIELDS = "number,title,body,url,labels,assignees,author,milestone";
+/** Open pull requests one run lists at most, to see which issues someone is already fixing. */
+const PR_FETCH_LIMIT = 500;
+const PR_FIELDS = "number,url,headRefName,updatedAt,closingIssuesReferences";
 
 export type CreateImportedCard = (p: Project, card: { title: string; description: string; draft: boolean }) => Card;
 
@@ -67,9 +72,26 @@ export async function fetchIssues(c: GithubImportConfig, repo: string, cwd: stri
   return raw.filter((i): i is GithubIssue => !!i && typeof i === "object" && Number.isInteger((i as GithubIssue).number));
 }
 
+/** The open pull requests of `repo` by the issue they close (`closingIssuesReferences`). */
+export async function fetchOpenPullRequests(repo: string, cwd: string): Promise<Map<number, OpenPullRequest[]>> {
+  const args = ["pr", "list", "--repo", repo, "--state", "open", "--limit", String(PR_FETCH_LIMIT), "--json", PR_FIELDS];
+  const raw = JSON.parse(await gh(args, cwd)) as unknown;
+  if (!Array.isArray(raw)) throw new Error("gh pr list did not return a list");
+  const byIssue = new Map<number, OpenPullRequest[]>();
+  for (const pr of raw as (OpenPullRequest & { closingIssuesReferences?: { number?: number }[] })[]) {
+    if (!pr || !Number.isInteger(pr.number)) continue;
+    const { closingIssuesReferences: closes = [], ...rest } = pr;
+    for (const ref of closes) {
+      if (!Number.isInteger(ref?.number)) continue;
+      byIssue.set(ref.number as number, [...(byIssue.get(ref.number as number) ?? []), rest]);
+    }
+  }
+  return byIssue;
+}
+
 /** One import of `p` now, whatever its schedule; never throws (the error is in the result). */
-export async function runImport(p: Project, create: CreateImportedCard): Promise<GithubImportRun> {
-  const at = new Date().toISOString();
+export async function runImport(p: Project, create: CreateImportedCard, now = Date.now()): Promise<GithubImportRun> {
+  const at = new Date(now).toISOString();
   const c = normalizeGithubImport(p.board.githubImport);
   if (!c) return { at, created: [], known: 0, deferred: 0, error: "GitHub import is not configured" };
   try {
@@ -78,11 +100,15 @@ export async function runImport(p: Project, create: CreateImportedCard): Promise
     const issues = (await fetchIssues(c, repo, p.path)).filter((i) => matchesFilters(i, c, me));
     const onBoard = new Set(p.board.cards.flatMap((card) => issueNumbersOf(card, repo)));
     const imported = new Set(c.imported);
-    const fresh = issues.filter((i) => !onBoard.has(i.number) && !imported.has(i.number)).sort((a, b) => a.number - b.number);
+    const candidates = issues.filter((i) => !onBoard.has(i.number) && !imported.has(i.number));
+    const prs = candidates.length > 0 ? await fetchOpenPullRequests(repo, p.path) : new Map<number, OpenPullRequest[]>();
+    const activity = new Map(candidates.map((i) => [i.number, prActivity(prs.get(i.number) ?? [], c.activePrHours, now)]));
+    const fresh = candidates.filter((i) => activity.get(i.number)?.active.length === 0).sort((a, b) => a.number - b.number);
+    const inProgress = candidates.length - fresh.length;
     const taken = fresh.slice(0, c.maxPerRun);
     const created: number[] = [];
     for (const issue of taken) {
-      create(p, { ...cardOfIssue(issue), draft: c.asDraft });
+      create(p, { ...cardOfIssue(issue, activity.get(issue.number)?.abandoned), draft: c.asDraft });
       created.push(issue.number);
     }
     if (created.length > 0) {
@@ -91,7 +117,7 @@ export async function runImport(p: Project, create: CreateImportedCard): Promise
         board.githubImport = { ...now, imported: [...now.imported, ...created].slice(-MAX_REMEMBERED_ISSUES) };
       });
     }
-    return { at, created, known: issues.length - fresh.length, deferred: fresh.length - taken.length };
+    return { at, created, known: issues.length - candidates.length, deferred: fresh.length - taken.length, inProgress };
   } catch (e) {
     return { at, created: [], known: 0, deferred: 0, error: e instanceof Error ? e.message : String(e) };
   }

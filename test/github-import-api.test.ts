@@ -8,7 +8,9 @@ import { type ChildServer, removeTempDirs, startChildServer } from "./helpers.ts
 // A fake `gh`: `repo view`, `api user` and `issue list` answered from files the test writes.
 const ghDir = mkdtempSync(join(tmpdir(), "fake-gh-"));
 const ISSUES = join(ghDir, "issues.json");
+const PRS = join(ghDir, "prs.json");
 const CALLS = join(ghDir, "calls.log");
+writeFileSync(PRS, "[]");
 const FAIL = join(ghDir, "fail");
 const GH = join(ghDir, "gh");
 writeFileSync(
@@ -20,6 +22,7 @@ case "$1 $2" in
   "repo view") echo "acme/app" ;;
   "api user") echo "alice" ;;
   "issue list") cat "${ISSUES}" ;;
+  "pr list") cat "${PRS}" ;;
   *) echo "unexpected $*" >&2; exit 2 ;;
 esac
 `,
@@ -144,4 +147,51 @@ test("github-import-never-runs-in-an-instance-without-agents", async () => {
   const d = await openProject(idle);
   await save(idle, d, { enabled: true, labels: ["bug"] });
   expect((await run(idle, d)).status).toBe(409);
+});
+
+const pr = (number: number, closes: number, hoursAgo: number) => ({
+  number,
+  url: `https://github.com/acme/app/pull/${number}`,
+  headRefName: `fix/${closes}`,
+  updatedAt: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+  closingIssuesReferences: [{ number: closes }],
+});
+
+test("github-import-leaves-out-an-issue-whose-open-pr-is-active-and-takes-over-an-abandoned-one", async () => {
+  writeFileSync(ISSUES, JSON.stringify([issue(20, ["bug"]), issue(21, ["bug"]), issue(22, ["bug"])]));
+  writeFileSync(PRS, JSON.stringify([pr(120, 20, 2), pr(121, 21, 10)]));
+  try {
+    const d = await openProject(srv);
+    await save(srv, d, { enabled: true, labels: ["bug"], activePrHours: 6 });
+    const out = (await (await run(srv, d)).json()) as { lastRun: { created: number[]; inProgress: number } };
+    expect(out.lastRun.created).toEqual([21, 22]);
+    expect(out.lastRun.inProgress).toBe(1);
+    const cards = (await snap(srv, d)).board.cards;
+    const taken = cards.find((c) => c.title === "#21 Issue 21");
+    expect(taken?.description).toContain("Open PR #121 (branch `fix/21`)");
+    expect(taken?.description).toContain("take over its branch, do not start a new one");
+    expect(cards.find((c) => c.title === "#22 Issue 22")?.description).not.toContain("Open PR");
+
+    // Once its PR is older than the window, the held issue comes in on a later run.
+    await save(srv, d, { enabled: true, labels: ["bug"], activePrHours: 1 });
+    const later = (await (await run(srv, d)).json()) as { lastRun: { created: number[]; inProgress: number } };
+    expect(later.lastRun.created).toEqual([20]);
+    expect(later.lastRun.inProgress).toBe(0);
+  } finally {
+    writeFileSync(PRS, "[]");
+  }
+});
+
+test("github-import-active-pr-hours-zero-never-holds-an-issue-back", async () => {
+  writeFileSync(ISSUES, JSON.stringify([issue(30, ["bug"])]));
+  writeFileSync(PRS, JSON.stringify([pr(130, 30, 0)]));
+  try {
+    const d = await openProject(srv);
+    await save(srv, d, { enabled: true, labels: ["bug"], activePrHours: 0 });
+    const out = (await (await run(srv, d)).json()) as { lastRun: { created: number[] } };
+    expect(out.lastRun.created).toEqual([30]);
+    expect((await save(srv, d, { activePrHours: 73 })).status).toBe(400);
+  } finally {
+    writeFileSync(PRS, "[]");
+  }
 });

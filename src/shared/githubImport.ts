@@ -21,6 +21,13 @@ const MAX_FILTER_VALUES = 50;
 const MAX_FILTER_VALUE_CHARS = 200;
 /** Assignee meaning "whoever `gh` is logged in as". */
 export const ME = "@me";
+/**
+ * An open pull request that closes an issue and moved within this many hours is someone's work in
+ * progress: its issue is not imported. Older, it is taken for abandoned (a crashed agent's): the issue is
+ * imported, its card says to take that branch over. 0: an open pull request never holds an issue back.
+ */
+export const DEFAULT_ACTIVE_PR_HOURS = 72;
+export const MAX_ACTIVE_PR_HOURS = 72;
 
 export interface GithubImportConfig {
   enabled: boolean;
@@ -42,8 +49,18 @@ export interface GithubImportConfig {
   maxPerRun: number;
   /** Imported cards are drafts: fast forward leaves them in Backlog until someone takes the draft off. */
   asDraft: boolean;
+  /** Hours an open pull request counts as active (see DEFAULT_ACTIVE_PR_HOURS). */
+  activePrHours: number;
   /** Issue numbers imported already (newest last). */
   imported: number[];
+}
+
+/** An open pull request that closes an issue (`gh pr list --json closingIssuesReferences`). */
+export interface OpenPullRequest {
+  number: number;
+  url: string;
+  headRefName: string;
+  updatedAt: string;
 }
 
 export const DEFAULT_GITHUB_IMPORT: GithubImportConfig = {
@@ -58,6 +75,7 @@ export const DEFAULT_GITHUB_IMPORT: GithubImportConfig = {
   intervalMinutes: DEFAULT_IMPORT_INTERVAL_MINUTES,
   maxPerRun: DEFAULT_IMPORT_MAX_PER_RUN,
   asDraft: true,
+  activePrHours: DEFAULT_ACTIVE_PR_HOURS,
   imported: [],
 };
 
@@ -82,6 +100,8 @@ export interface GithubImportRun {
   known: number;
   /** Issues that matched but did not fit in this run's cap: the next run takes them. */
   deferred: number;
+  /** Issues that matched but have an active open pull request: someone works on them. */
+  inProgress?: number;
   error?: string;
 }
 
@@ -153,6 +173,7 @@ export function parseGithubImport(raw: unknown, imported: number[] = []): Github
     ),
     maxPerRun: int(r.maxPerRun, "maxPerRun", 1, MAX_IMPORT_MAX_PER_RUN, DEFAULT_IMPORT_MAX_PER_RUN),
     asDraft: r.asDraft !== false,
+    activePrHours: int(r.activePrHours, "activePrHours", 0, MAX_ACTIVE_PR_HOURS, DEFAULT_ACTIVE_PR_HOURS),
     imported,
   };
   if (config.enabled && !hasFilter(config))
@@ -229,9 +250,33 @@ export function issueNumbersOf(card: { title: string; description: string }, rep
 }
 
 /** The card an issue becomes: `#N title`, and its link, state and body as the description. */
-export function cardOfIssue(issue: GithubIssue): { title: string; description: string } {
+export function cardOfIssue(issue: GithubIssue, abandoned: OpenPullRequest[] = []): { title: string; description: string } {
+  const takeOver = abandoned.map(
+    (pr) =>
+      `Open PR #${pr.number} (branch \`${pr.headRefName}\`), inactive since ${pr.updatedAt.slice(0, 16).replace("T", " ")} UTC: take over its branch, do not start a new one. ${pr.url}`,
+  );
+  const head = [`Issue: ${issue.url}`, ...takeOver].join("\n");
   return {
     title: `#${issue.number} ${issue.title}`.trim(),
-    description: `Issue: ${issue.url}\n\n${(issue.body ?? "").trim()}\n`,
+    description: `${head}\n\n${(issue.body ?? "").trim()}\n`,
   };
+}
+
+/**
+ * Splits an issue's open pull requests into active ones (moved within `hours`) and abandoned ones, at `now`.
+ * `hours` 0: none is active.
+ */
+export function prActivity(
+  prs: OpenPullRequest[],
+  hours: number,
+  now: number,
+): { active: OpenPullRequest[]; abandoned: OpenPullRequest[] } {
+  const active: OpenPullRequest[] = [];
+  const abandoned: OpenPullRequest[] = [];
+  for (const pr of prs) {
+    const moved = Date.parse(pr.updatedAt);
+    if (hours > 0 && Number.isFinite(moved) && now - moved < hours * 3_600_000) active.push(pr);
+    else abandoned.push(pr);
+  }
+  return { active, abandoned };
 }

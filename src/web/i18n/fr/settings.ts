@@ -79,9 +79,12 @@ export const settings: Record<keyof typeof enSettings, string> = {
   "settings.githubImport.maxPerRun.help": "Au plus {max} ; le reste arrive aux imports suivants, la plus ancienne issue d'abord.",
   "settings.githubImport.asDraft.label": "Importer en brouillon",
   "settings.githubImport.asDraft.help": "L'avance rapide laisse les brouillons dans le Backlog tant que vous ne retirez pas le brouillon.",
+  "settings.githubImport.activePrHours.label": "PR ouverte active pendant (heures)",
+  "settings.githubImport.activePrHours.help":
+    "Une issue dont la PR ouverte a bougé dans ce délai est laissée de côté (quelqu'un y travaille). Au-delà, la PR est considérée abandonnée : l'issue est importée et sa carte dit de reprendre la branche. 0 : jamais laissée de côté. Au plus {max}.",
   "settings.githubImport.save": "Enregistrer l'import",
   "settings.githubImport.runNow": "Enregistrer et importer maintenant",
   "settings.githubImport.runDone":
-    "Dernier import {at} : {created} créées, {known} déjà sur le tableau, {deferred} pour le prochain import.",
+    "Dernier import {at} : {created} créées, {known} déjà sur le tableau, {inProgress} avec une PR active, {deferred} pour le prochain import.",
   "settings.githubImport.runError": "Dernier import {at} en échec : {error}",
 };

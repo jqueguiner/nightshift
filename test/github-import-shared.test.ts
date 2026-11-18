@@ -8,6 +8,7 @@ import {
   matchesFilters,
   normalizeGithubImport,
   parseGithubImport,
+  prActivity,
   searchQuery,
 } from "../src/shared/githubImport.ts";
 
@@ -86,4 +87,19 @@ test("github-import-issue-numbers-of-a-card", () => {
 
 test("github-import-card-of-an-issue", () => {
   expect(cardOfIssue(issue())).toEqual({ title: "#12 Fix it", description: "Issue: https://github.com/acme/app/issues/12\n\ndetails\n" });
+});
+
+test("github-import-pr-activity-window", () => {
+  const now = Date.parse("2026-11-18T12:00:00Z");
+  const at = (h: number) => new Date(now - h * 3_600_000).toISOString();
+  const prs = [
+    { number: 1, url: "u1", headRefName: "a", updatedAt: at(5) },
+    { number: 2, url: "u2", headRefName: "b", updatedAt: at(7) },
+  ];
+  const six = prActivity(prs, 6, now);
+  expect(six.active.map((p) => p.number)).toEqual([1]);
+  expect(six.abandoned.map((p) => p.number)).toEqual([2]);
+  expect(prActivity(prs, 0, now).active).toEqual([]);
+  expect(DEFAULT_GITHUB_IMPORT.activePrHours).toBe(72);
+  expect(() => parseGithubImport({ activePrHours: 73 })).toThrow("activePrHours");
 });

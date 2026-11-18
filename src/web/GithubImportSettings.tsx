@@ -3,6 +3,7 @@ import {
   DEFAULT_GITHUB_IMPORT,
   type GithubImportConfig,
   type GithubImportRun,
+  MAX_ACTIVE_PR_HOURS,
   MAX_IMPORT_INTERVAL_MINUTES,
   MAX_IMPORT_MAX_PER_RUN,
   MIN_IMPORT_INTERVAL_MINUTES,
@@ -27,6 +28,7 @@ interface Draft {
   search: string;
   intervalMinutes: string;
   maxPerRun: string;
+  activePrHours: string;
   asDraft: boolean;
 }
 
@@ -48,6 +50,7 @@ export function draftOf(c: GithubImportConfig): Draft {
     search: c.search,
     intervalMinutes: String(c.intervalMinutes),
     maxPerRun: String(c.maxPerRun),
+    activePrHours: String(c.activePrHours),
     asDraft: c.asDraft,
   };
 }
@@ -65,6 +68,7 @@ export function configOf(d: Draft): Partial<GithubImportConfig> {
     search: d.search.trim(),
     intervalMinutes: Number(d.intervalMinutes),
     maxPerRun: Number(d.maxPerRun),
+    activePrHours: Number(d.activePrHours),
     asDraft: d.asDraft,
   };
 }
@@ -77,6 +81,7 @@ export function describeRun(run: GithubImportRun): string {
     created: String(run.created.length),
     known: String(run.known),
     deferred: String(run.deferred),
+    inProgress: String(run.inProgress ?? 0),
   });
 }
 
@@ -164,6 +169,13 @@ export function GithubImportSettings({ project }: { project: string }) {
         help={t("settings.githubImport.maxPerRun.help", { max: String(MAX_IMPORT_MAX_PER_RUN) })}
       >
         {text("maxPerRun", "gi-max")}
+      </Row>
+      <Row
+        id="gi-active-pr"
+        label={t("settings.githubImport.activePrHours.label")}
+        help={t("settings.githubImport.activePrHours.help", { max: String(MAX_ACTIVE_PR_HOURS) })}
+      >
+        {text("activePrHours", "gi-active-pr")}
       </Row>
       <Row id="gi-draft" label={t("settings.githubImport.asDraft.label")} help={t("settings.githubImport.asDraft.help")}>
         <Switch id="gi-draft" checked={draft.asDraft} onCheckedChange={(v) => set("asDraft", v)} />
